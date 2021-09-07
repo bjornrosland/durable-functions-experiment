@@ -9,40 +9,38 @@ using Microsoft.Extensions.Logging;
 
 namespace DurableFunctions
 {
-    public static class E2_BackupSiteContent
+    public static class SayHelloDurable
     {
-        [FunctionName("E2_BackupSiteContent")]
+        [FunctionName("SayHelloDurable")]
         public static async Task<List<string>> RunOrchestrator(
             [OrchestrationTrigger] IDurableOrchestrationContext context)
         {
             var outputs = new List<string>
             {
-
-                // Replace "hello" with the name of your Durable Activity Function.
-                await context.CallActivityAsync<string>("E2_BackupSiteContent_Hello", "Tokyo"),
-                await context.CallActivityAsync<string>("E2_BackupSiteContent_Hello", "Seattle"),
-                await context.CallActivityAsync<string>("E2_BackupSiteContent_Hello", "London")
+                await context.CallActivityAsync<string>("SayHelloDurable_Hello", "Tokyo"),
+                await context.CallActivityAsync<string>("SayHelloDurable_Hello", "Seattle"),
+                await context.CallActivityAsync<string>("SayHelloDurable_Hello", "London")
             };
 
             // returns ["Hello Tokyo!", "Hello Seattle!", "Hello London!"]
             return outputs;
         }
 
-        [FunctionName("E2_BackupSiteContent_Hello")]
+        [FunctionName("SayHelloDurable_Hello")]
         public static string SayHello([ActivityTrigger] string name, ILogger log)
         {
             log.LogInformation($"Saying hello to {name}.");
             return $"Hello {name}!";
         }
 
-        [FunctionName("E2_BackupSiteContent_HttpStart")]
+        [FunctionName("SayHelloDurable_HttpStart")]
         public static async Task<HttpResponseMessage> HttpStart(
             [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post")] HttpRequestMessage req,
             [DurableClient] IDurableOrchestrationClient starter,
             ILogger log)
         {
             // Function input comes from the request content.
-            string instanceId = await starter.StartNewAsync("E2_BackupSiteContent", null);
+            string instanceId = await starter.StartNewAsync("SayHelloDurable", null);
 
             log.LogInformation($"Started orchestration with ID = '{instanceId}'.");
 
