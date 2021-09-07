@@ -1,8 +1,9 @@
+using Microsoft.Azure.Storage.Blob;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.DurableTask;
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.Extensions.Logging;
-using Microsoft.WindowsAzure.Storage.Blob;
+using System;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -73,7 +74,14 @@ namespace DurableFunctions
             using (Stream destination = await binder.BindAsync<CloudBlobStream>(
                 new BlobAttribute(outputLocation, FileAccess.Write)))
             {
-                await source.CopyToAsync(destination);
+                try
+                {
+                    await source.CopyToAsync(destination);
+                }
+                catch(Exception e)
+                {
+                    log.LogError($"Could not upload file {source} to {destination}.\nReason: {e.Message}");
+                }
             }
 
             return byteCount;
