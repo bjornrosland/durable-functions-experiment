@@ -8,13 +8,15 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
+using Twilio.Rest.Api.V2010.Account;
+using Twilio.Types;
 
 namespace DurableFunctions
 {
     public static class BackupSiteContent
     {
         [FunctionName("E2_BackupSiteContent")]
-        public static async Task<long> Run(
+        public static async Task<BackupInfo> Run(
             [OrchestrationTrigger] IDurableOrchestrationContext backupContext)
         {
             string rootDirectory = backupContext.GetInput<string>()?.Trim();
@@ -37,8 +39,16 @@ namespace DurableFunctions
 
             await Task.WhenAll(tasks);
 
-            long totalBytes = tasks.Sum(t => t.Result);
-            return totalBytes;
+            BackupInfo results = new BackupInfo()
+            {
+                Files = tasks.Length,
+                Bytes = tasks.Sum(t => t.Result),
+                Phone = "+4799247917"
+            };
+
+            await backupContext.CallActivityAsync("SMS_Notififaction", results);
+            
+            return results;
         }
 
         [FunctionName("E2_GetFileList")]
@@ -88,17 +98,32 @@ namespace DurableFunctions
             return byteCount;
         }
 
+        [FunctionName("SMS_Notififaction")]
+        public static void SendSmsChallenge(
+            [ActivityTrigger] BackupInfo backupInfo,
+            ILogger log,
+            [TwilioSms(AccountSidSetting = "TwilioAccountSid", AuthTokenSetting = "TwilioAuthToken", From = "%TwilioPhoneNumber%")]
+        out CreateMessageOptions message)
+        {
+
+            log.LogInformation($"Sending backup info to {backupInfo.Phone}.");
+            double megaBytes = backupInfo.Bytes / Math.Pow(1024, 2);
+
+            message = new CreateMessageOptions(new PhoneNumber(backupInfo.Phone))
+            {
+                Body = $"Your files have been backed up to your system.\nFiles: {backupInfo.Files}\nSize: {megaBytes:F2} MB"
+            };
+
+        }
+
         [FunctionName("E2_BackupSiteContent_Init")]
         public static async Task<HttpResponseMessage> HttpStart(
             [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post")] HttpRequestMessage req,
             [DurableClient] IDurableOrchestrationClient starter,
             ILogger log)
         {
-            // Function input comes from the request content.
             string instanceId = await starter.StartNewAsync("E2_BackupSiteContent", null);
-
             log.LogInformation($"Started orchestration with ID = '{instanceId}'.");
-
             return starter.CreateCheckStatusResponse(req, instanceId);
         }
     }
