@@ -9,7 +9,7 @@ using Twilio.Types;
 
 namespace DurableFunctions
 {
-    public static class HumanInteraction
+    public static class PhoneVerification
     {
         [FunctionName("E4_SmsPhoneVerification")]
         public static async Task<bool> Run(
