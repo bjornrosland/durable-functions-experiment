@@ -76,6 +76,7 @@ namespace DurableFunctions
             {
                 try
                 {
+                    log.LogInformation($"Backup of file '{filePath}'");
                     await source.CopyToAsync(destination);
                 }
                 catch(Exception e)
