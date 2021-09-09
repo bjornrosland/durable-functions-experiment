@@ -16,19 +16,23 @@ namespace DurableFunctions
             [OrchestrationTrigger] IDurableOrchestrationContext context, ILogger log)
         {
             bool hasResponded = false;
-            using (var timeoutCts = new CancellationTokenSource())
+            string eventName = "EventResponse";
+            TimeSpan timeOut = TimeSpan.FromMinutes(1);
+            log.LogInformation("Started orchestrator");
+
+            try
             {
-                log.LogInformation("Started orchestrator");
-                DateTime expiration = context.CurrentUtcDateTime.AddSeconds(90);
-                Task timeoutTask = context.CreateTimer(expiration, timeoutCts.Token);
-                Task responseTask = context.WaitForExternalEvent("EventResponse");
-                Task completedTask = await Task.WhenAny(responseTask, timeoutTask);
-                hasResponded = completedTask == responseTask;
-                if (!timeoutTask.IsCompleted)
-                    timeoutCts.Cancel();
-                if (hasResponded)
-                    log.LogInformation("The user has responded in time");
+                await context.WaitForExternalEvent(eventName, timeOut);
+                hasResponded = true;
             }
+            catch(TimeoutException)
+            {
+                log.LogWarning("Time out!");
+            }
+
+            if (hasResponded)
+                log.LogInformation("The user has responded in time");
+
             return hasResponded;
         }
 
