@@ -1,3 +1,4 @@
+using DurableFunctions.Models;
 using Microsoft.Azure.Storage.Blob;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.DurableTask;
@@ -99,7 +100,7 @@ namespace DurableFunctions
         }
 
         [FunctionName("SMS_Notififaction")]
-        public static void SendSmsChallenge(
+        public static void SendSms(
             [ActivityTrigger] BackupInfo backupInfo,
             ILogger log,
             [TwilioSms(AccountSidSetting = "TwilioAccountSid", AuthTokenSetting = "TwilioAuthToken", From = "%TwilioPhoneNumber%")]
