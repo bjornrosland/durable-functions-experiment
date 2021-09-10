@@ -9,52 +9,52 @@ using Microsoft.Extensions.Logging;
 using DurableFunctions.Models;
 using System.Collections.Generic;
 using Newtonsoft.Json;
+using System.Linq;
 
 namespace DurableFunctions
 {
+    
     public static class ExternalEvent
     {
+        private static readonly List<int> _ids = new List<int> { 10, 20 };
+        private static readonly List<int> _idsFromEvent = new List<int>();
+
         [FunctionName("ExternalEvent")]
         public static async Task<bool> RunOrchestrator(
             [OrchestrationTrigger] IDurableOrchestrationContext context, ILogger log)
         {
-            int id = context.GetInput<int>();
-            bool hasResponded = false;
-            string eventName = $"EventResponse_{id}";
-            TimeSpan timeOut = TimeSpan.FromMinutes(2);
-            log.LogInformation($"Started orchestration of ID: {id}");
-
-            try
+            bool hasAllIds = false;
+            string eventName = "ResponseId";
+            log.LogInformation($"Event name: {eventName}");
+            while (!hasAllIds)
             {
-                await context.WaitForExternalEvent(eventName, timeOut);
-                hasResponded = true;
-            }
-            catch (TimeoutException)
-            {
-                log.LogWarning($"Time out for ID {id}");
-            }
+                int idFromEvent = await context.WaitForExternalEvent<int>(eventName);
+                if (_ids.Contains(idFromEvent))
+                {
+                    log.LogInformation("Correct ID");
+                    lock (_idsFromEvent)
+                    {
+                        _idsFromEvent.Add(idFromEvent);
+                    }
+                }
+                else
+                {
+                    log.LogInformation($"The ID {idFromEvent} is not in list");
+                }
 
-            if (hasResponded)
-                log.LogInformation($"The ID {id} responded in time");
+                if (_ids.SequenceEqual(_idsFromEvent.Distinct()))
+                {
+                    log.LogInformation("We have all the IDs");
+                    hasAllIds = true;
+                }
+                else
+                {
+                    log.LogInformation("Still running");
+                }
 
-            return hasResponded;
-        }
 
-        [FunctionName("GetIds")]
-        public static int[] GetIds(
-            [ActivityTrigger] int numberOfIds,
-            ILogger log)
-        {
-            log.LogInformation($"Number of IDs: {numberOfIds}");
-            var rand = new Random(Guid.NewGuid().GetHashCode());
-            int[] ids = new int[numberOfIds];
-            for(int i = 0; i < numberOfIds; i++)
-            {
-                int id = rand.Next(10000);
-                log.LogInformation($"Created ID: {id}");
-                ids[i] = id;
             }
-            return ids;
+            return hasAllIds;
 
         }
 
@@ -64,32 +64,11 @@ namespace DurableFunctions
             [DurableClient] IDurableOrchestrationClient starter,
             ILogger log)
         {
-            string instanceId = await starter.StartNewAsync("OrchestrateFiles", null);
+            _idsFromEvent.Clear();
+            string instanceId = await starter.StartNewAsync("ExternalEvent", null);
             log.LogInformation($"Started orchestration with ID = '{instanceId}'.");
             var statusReponse = starter.CreateCheckStatusResponse(req, instanceId);
-            //var content = await statusReponse.Content.ReadAsStringAsync();
-            //var dto = JsonConvert.DeserializeObject<ExternalEventDto>(content);
-            //string sendEventPostUri = dto.SendEventPostUri.Replace("{eventName}", "ExternalEvent");
-            //log.LogInformation(sendEventPostUri);
             return statusReponse;
-        }
-
-        [FunctionName("OrchestrateFiles")]
-        public static async Task OrchestrateFiles(
-            [OrchestrationTrigger] IDurableOrchestrationContext context)
-        {
-            int[] ids = await context.CallActivityAsync<int[]>("GetIds", 2);
-
-            // Run multiple device provisioning flows in parallel
-            var provisioningTasks = new List<Task>();
-            foreach (int id in ids)
-            {
-                Task task = context.CallSubOrchestratorAsync("ExternalEvent", id);
-                provisioningTasks.Add(task);
-            }
-
-            await Task.WhenAll(provisioningTasks);
-
         }
 
     }
