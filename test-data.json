@@ -1,0 +1,4 @@
+{
+    "jobId": 1234,
+    "files": ["file1.txt", "file2.txt", "file3.txt"]
+}
