@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -24,21 +25,29 @@ namespace DurableFunctions
             log.LogInformation($"Started orchestration with ID = '{instanceId}'.");
             string responseUri = await GetResponseUriAsync(starter, instanceId);
             log.LogInformation(responseUri);
-            message.Files.ToList().ForEach(async file =>
-            {
-                await PostEventMessageAsync(responseUri, file, log);
-                await Task.Delay(TimeSpan.FromSeconds(1));
-            });
         }
 
         [FunctionName("BatchOrchestrator")]
-        public static async Task RunOrchestrator(
+        public static async Task<List<string>> RunOrchestrator(
         [OrchestrationTrigger] IDurableOrchestrationContext context,
         ILogger log)
         {
+            bool done = false;
+            List<string> files = new List<string>();
             QueueMessageDto message = context.GetInput<QueueMessageDto>();
             string messageContent = JsonConvert.SerializeObject(message);
             log.LogInformation(messageContent);
+            while (!done)
+            {
+                string fileName = await context.WaitForExternalEvent<string>("BatchResponse");
+                if (message.Files.Contains(fileName))
+                {
+                    log.LogInformation($"Completed with file {fileName}");
+                    files.Add(fileName);
+                    done = true;
+                }
+            }
+            return files;
         }
 
         private static async Task<string> GetResponseUriAsync(IDurableOrchestrationClient starter,
@@ -51,15 +60,6 @@ namespace DurableFunctions
             ExternalEventDto dto = JsonConvert.DeserializeObject<ExternalEventDto>(content);
             string responseUri = dto.SendEventPostUri.Replace("{eventName}", eventName);
             return responseUri;
-        }
-
-        private static async Task PostEventMessageAsync(string responseUri, string fileName, ILogger log)
-        {
-            using HttpClient client = new HttpClient();
-            HttpContent content = new StringContent(fileName);
-            content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-            await client.PostAsync(responseUri, content);
-            log.LogInformation($"Seding HTTP request for file {fileName}");
         }
     }
 }
