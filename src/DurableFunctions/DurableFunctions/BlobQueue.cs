@@ -1,5 +1,7 @@
 using System;
+using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using DurableFunctions.Models;
 using Microsoft.Azure.WebJobs;
@@ -13,15 +15,20 @@ namespace DurableFunctions
     public static class BlobQueue
     {
         [FunctionName("BlobQueue")]
-        public static async Task RunAsync([QueueTrigger("test-queue", Connection = "BlobQueue")]string myQueueItem,
+        public static async Task RunAsync([QueueTrigger("test-queue", Connection = "BlobQueue")]string queueMessage,
             [DurableClient] IDurableOrchestrationClient starter,
             ILogger log)
         {
-            var message = JsonConvert.DeserializeObject<QueueMessageDto>(myQueueItem);
+            var message = JsonConvert.DeserializeObject<QueueMessageDto>(queueMessage);
             string instanceId = await starter.StartNewAsync("BatchOrchestrator", message);
             log.LogInformation($"Started orchestration with ID = '{instanceId}'.");
             string responseUri = await GetResponseUriAsync(starter, instanceId);
             log.LogInformation(responseUri);
+            message.Files.ToList().ForEach(async file =>
+            {
+                await PostEventMessageAsync(responseUri, file, log);
+                await Task.Delay(TimeSpan.FromSeconds(1));
+            });
         }
 
         [FunctionName("BatchOrchestrator")]
@@ -46,6 +53,13 @@ namespace DurableFunctions
             return responseUri;
         }
 
-
+        private static async Task PostEventMessageAsync(string responseUri, string fileName, ILogger log)
+        {
+            using HttpClient client = new HttpClient();
+            HttpContent content = new StringContent(fileName);
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+            await client.PostAsync(responseUri, content);
+            log.LogInformation($"Seding HTTP request for file {fileName}");
+        }
     }
 }
