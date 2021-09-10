@@ -1,4 +1,5 @@
 using System;
+using System.Net.Http;
 using System.Threading.Tasks;
 using DurableFunctions.Models;
 using Microsoft.Azure.WebJobs;
@@ -19,6 +20,8 @@ namespace DurableFunctions
             var message = JsonConvert.DeserializeObject<QueueMessageDto>(myQueueItem);
             string instanceId = await starter.StartNewAsync("BatchOrchestrator", message);
             log.LogInformation($"Started orchestration with ID = '{instanceId}'.");
+            string responseUri = await GetResponseUriAsync(starter, instanceId);
+            log.LogInformation(responseUri);
         }
 
         [FunctionName("BatchOrchestrator")]
@@ -29,7 +32,18 @@ namespace DurableFunctions
             QueueMessageDto message = context.GetInput<QueueMessageDto>();
             string messageContent = JsonConvert.SerializeObject(message);
             log.LogInformation(messageContent);
+        }
 
+        private static async Task<string> GetResponseUriAsync(IDurableOrchestrationClient starter,
+            string instanceId,
+            string eventName="BatchResponse")
+        {
+            HttpRequestMessage req = new HttpRequestMessage();
+            var statusReponse = starter.CreateCheckStatusResponse(req, instanceId);
+            string content = await statusReponse.Content.ReadAsStringAsync();
+            ExternalEventDto dto = JsonConvert.DeserializeObject<ExternalEventDto>(content);
+            string responseUri = dto.SendEventPostUri.Replace("{eventName}", eventName);
+            return responseUri;
         }
 
 
