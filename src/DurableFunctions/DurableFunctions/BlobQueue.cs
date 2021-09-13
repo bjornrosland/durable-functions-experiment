@@ -33,12 +33,11 @@ namespace DurableFunctions
         }
 
         [FunctionName("BatchOrchestrator")]
-        public static async Task<List<string>> RunOrchestrator(
+        public static async Task<bool> RunOrchestrator(
         [OrchestrationTrigger] IDurableOrchestrationContext context,
         ILogger log)
         {
             bool done = false;
-            List<string> files = new List<string>();
             QueueMessageDto message = context.GetInput<QueueMessageDto>();
             string messageContent = JsonConvert.SerializeObject(message);
             log.LogInformation(messageContent);
@@ -48,12 +47,13 @@ namespace DurableFunctions
 
                 if (message.Files.Contains(fileName))
                 {
-                    log.LogInformation($"Completed with file {fileName}");
-                    files.Add(fileName);
-                    done = true;
+                    log.LogInformation($"File {fileName} as been completed");
+                    await SetRowCompletedAsync(context.InstanceId, fileName);
                 }
+                bool hasRunningTasks = await HasRunningTasksAsync(context.InstanceId);
+                done = !hasRunningTasks;
             }
-            return files;
+            return done;
         }
 
         private static async Task<string> GetResponseUriAsync(IDurableOrchestrationClient starter,
@@ -86,6 +86,33 @@ namespace DurableFunctions
                 insertTasks.Add(insertTask);
             });
             await Task.WhenAll(insertTasks);
+        }
+
+        private static async Task<bool> HasRunningTasksAsync(string instanceId, string tableName="TestTable")
+        {
+            var tableClient = _tableServiceClient.GetTableClient(tableName);
+            string querySting = $"InstanceId eq '{instanceId}' and Completed eq false";
+            var rows = tableClient.QueryAsync<TableEntity>(filter: querySting);
+            int numRows = 0;
+            await foreach(var row in rows)
+            {
+                numRows++;
+                break;
+            }
+            return numRows > 0;
+
+        }
+
+        private static async Task SetRowCompletedAsync(string instanceId, string fileName, string tableName = "TestTable")
+        {
+            var tableClient = _tableServiceClient.GetTableClient(tableName);
+            string querySting = $"InstanceId eq '{instanceId}' and FileName eq '{fileName}'";
+            var rows = tableClient.QueryAsync<TableEntity>(filter: querySting);
+            await foreach (var row in rows)
+            {
+                row["Completed"] = true;
+                await tableClient.UpdateEntityAsync(row, row.ETag);
+            }
         }
     }
 }
