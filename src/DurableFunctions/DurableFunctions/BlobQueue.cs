@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
+using Azure.Data.Tables;
 using DurableFunctions.Models;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.DurableTask;
@@ -15,6 +16,8 @@ namespace DurableFunctions
 {
     public static class BlobQueue
     {
+        private static readonly TableServiceClient _tableServiceClient = new TableServiceClient(Environment.GetEnvironmentVariable("BlobTable"));
+
         [FunctionName("BlobQueue")]
         public static async Task RunAsync([QueueTrigger("test-queue", Connection = "BlobQueue")]string queueMessage,
             [DurableClient] IDurableOrchestrationClient starter,
@@ -23,6 +26,8 @@ namespace DurableFunctions
             var message = JsonConvert.DeserializeObject<QueueMessageDto>(queueMessage);
             string instanceId = await starter.StartNewAsync("BatchOrchestrator", message);
             log.LogInformation($"Started orchestration with ID = '{instanceId}'.");
+            await InsertRowsAsync(message.Files.ToList(), instanceId);
+            log.LogInformation("Inserted rows to table");
             string responseUri = await GetResponseUriAsync(starter, instanceId);
             log.LogInformation(responseUri);
         }
@@ -40,6 +45,7 @@ namespace DurableFunctions
             while (!done)
             {
                 string fileName = await context.WaitForExternalEvent<string>("BatchResponse");
+
                 if (message.Files.Contains(fileName))
                 {
                     log.LogInformation($"Completed with file {fileName}");
@@ -60,6 +66,26 @@ namespace DurableFunctions
             ExternalEventDto dto = JsonConvert.DeserializeObject<ExternalEventDto>(content);
             string responseUri = dto.SendEventPostUri.Replace("{eventName}", eventName);
             return responseUri;
+        }
+
+        private static async Task InsertRowsAsync(List<string> files, string instanceId, string tableName="TestTable")
+        {
+            var tableClient = _tableServiceClient.GetTableClient(tableName);
+            string partitonKey = Guid.NewGuid().ToString();
+            List<Task> insertTasks = new List<Task>();
+            files.ForEach(file =>
+            {
+                string rowKey = Guid.NewGuid().ToString();
+                TableEntity row = new TableEntity(partitonKey, rowKey)
+                {
+                    {"InstanceId" , instanceId},
+                    {"FileName", file },
+                    {"Completed", false }
+                };
+                Task insertTask = tableClient.AddEntityAsync(row);
+                insertTasks.Add(insertTask);
+            });
+            await Task.WhenAll(insertTasks);
         }
     }
 }
