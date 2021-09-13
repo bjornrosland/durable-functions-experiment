@@ -17,6 +17,7 @@ namespace DurableFunctions
     public static class BlobQueue
     {
         private static readonly TableServiceClient _tableServiceClient = new TableServiceClient(Environment.GetEnvironmentVariable("BlobTable"));
+        private static readonly TableClient _tableClient = _tableServiceClient.GetTableClient("TestTable");
 
         [FunctionName("BlobQueue")]
         public static async Task RunAsync([QueueTrigger("test-queue", Connection = "BlobQueue")]string queueMessage,
@@ -71,9 +72,8 @@ namespace DurableFunctions
             return responseUri;
         }
 
-        private static async Task InsertRowsAsync(List<string> files, string instanceId, string tableName="TestTable")
+        private static async Task InsertRowsAsync(List<string> files, string instanceId)
         {
-            var tableClient = _tableServiceClient.GetTableClient(tableName);
             string partitonKey = Guid.NewGuid().ToString();
             List<Task> insertTasks = new List<Task>();
             files.ForEach(file =>
@@ -85,17 +85,16 @@ namespace DurableFunctions
                     {"FileName", file },
                     {"Completed", false }
                 };
-                Task insertTask = tableClient.AddEntityAsync(row);
+                Task insertTask = _tableClient.AddEntityAsync(row);
                 insertTasks.Add(insertTask);
             });
             await Task.WhenAll(insertTasks);
         }
 
-        private static async Task<bool> HasRunningTasksAsync(string instanceId, string tableName="TestTable")
+        private static async Task<bool> HasRunningTasksAsync(string instanceId)
         {
-            var tableClient = _tableServiceClient.GetTableClient(tableName);
             string querySting = $"InstanceId eq '{instanceId}' and Completed eq false";
-            var rows = tableClient.QueryAsync<TableEntity>(filter: querySting);
+            var rows = _tableClient.QueryAsync<TableEntity>(filter: querySting);
             int numRows = 0;
             await foreach(var row in rows)
             {
@@ -106,15 +105,14 @@ namespace DurableFunctions
 
         }
 
-        private static async Task SetRowCompletedAsync(string instanceId, string fileName, string tableName = "TestTable")
+        private static async Task SetRowCompletedAsync(string instanceId, string fileName)
         {
-            var tableClient = _tableServiceClient.GetTableClient(tableName);
             string querySting = $"InstanceId eq '{instanceId}' and FileName eq '{fileName}'";
-            var rows = tableClient.QueryAsync<TableEntity>(filter: querySting);
+            var rows = _tableClient.QueryAsync<TableEntity>(filter: querySting);
             await foreach (var row in rows)
             {
                 row["Completed"] = true;
-                await tableClient.UpdateEntityAsync(row, row.ETag);
+                await _tableClient.UpdateEntityAsync(row, row.ETag);
             }
         }
     }
