@@ -44,14 +44,17 @@ namespace DurableFunctions
             while (!done)
             {
                 string fileName = await context.WaitForExternalEvent<string>("BatchResponse");
-
                 if (message.Files.Contains(fileName))
                 {
+                    SetRowCompletedAsync(context.InstanceId, fileName).Wait();
                     log.LogInformation($"File {fileName} as been completed");
-                    await SetRowCompletedAsync(context.InstanceId, fileName);
+                    bool hasRunningTasks = HasRunningTasksAsync(context.InstanceId).Result;
+                    done = !hasRunningTasks;
                 }
-                bool hasRunningTasks = await HasRunningTasksAsync(context.InstanceId);
-                done = !hasRunningTasks;
+                else
+                {
+                    log.LogWarning($"The file '{fileName}' is not listed in this context");
+                }
             }
             return done;
         }
