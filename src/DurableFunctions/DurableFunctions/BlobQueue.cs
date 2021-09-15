@@ -47,9 +47,9 @@ namespace DurableFunctions
                 string fileName = await context.WaitForExternalEvent<string>("BatchResponse");
                 if (message.Files.Contains(fileName))
                 {
-                    SetRowCompletedAsync(context.InstanceId, fileName).Wait();
+                    await context.CallActivityAsync("SetRowCompleted", (context.InstanceId, fileName));
                     log.LogInformation($"File {fileName} as been completed");
-                    bool hasRunningTasks = HasRunningTasksAsync(context.InstanceId).Result;
+                    bool hasRunningTasks = await context.CallActivityAsync<bool>("HasRunningTasks", context.InstanceId);
                     done = !hasRunningTasks;
                 }
                 else
@@ -91,7 +91,8 @@ namespace DurableFunctions
             await Task.WhenAll(insertTasks);
         }
 
-        private static async Task<bool> HasRunningTasksAsync(string instanceId)
+        [FunctionName("HasRunningTasks")]
+        public static async Task<bool> HasRunningTasksAsync([ActivityTrigger] string instanceId)
         {
             string querySting = $"InstanceId eq '{instanceId}' and Completed eq false";
             var rows = _tableClient.QueryAsync<TableEntity>(filter: querySting);
@@ -102,12 +103,12 @@ namespace DurableFunctions
                 break;
             }
             return numRows > 0;
-
         }
 
-        private static async Task SetRowCompletedAsync(string instanceId, string fileName)
+        [FunctionName("SetRowCompleted")]
+        public static async Task SetRowCompletedAsync([ActivityTrigger] Tuple<string ,string> input)
         {
-            string querySting = $"InstanceId eq '{instanceId}' and FileName eq '{fileName}'";
+            string querySting = $"InstanceId eq '{input.Item1}' and FileName eq '{input.Item2}'";
             var rows = _tableClient.QueryAsync<TableEntity>(filter: querySting);
             await foreach (var row in rows)
             {
