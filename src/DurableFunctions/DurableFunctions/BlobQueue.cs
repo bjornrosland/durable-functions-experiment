@@ -106,9 +106,9 @@ namespace DurableFunctions
         }
 
         [FunctionName("SetRowCompleted")]
-        public static async Task SetRowCompletedAsync([ActivityTrigger] Tuple<string ,string> input)
+        public static async Task SetRowCompletedAsync([ActivityTrigger] (string instanceid, string fileName) input)
         {
-            string querySting = $"InstanceId eq '{input.Item1}' and FileName eq '{input.Item2}'";
+            string querySting = $"InstanceId eq '{input.instanceid}' and FileName eq '{input.fileName}'";
             var rows = _tableClient.QueryAsync<TableEntity>(filter: querySting);
             await foreach (var row in rows)
             {
