@@ -2,13 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using Azure.Data.Tables;
 using DurableFunctions.Models;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.DurableTask;
-using Microsoft.Azure.WebJobs.Host;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 
@@ -44,12 +42,15 @@ namespace DurableFunctions
             log.LogInformation(messageContent);
             while (!done)
             {
-                string fileName = await context.WaitForExternalEvent<string>("BatchResponse");
+                string fileName = await context.WaitForExternalEvent<string>("BatchResponse", TimeSpan.FromMinutes(5));
                 if (message.Files.Contains(fileName))
                 {
-                    await context.CallActivityAsync("SetRowCompleted", (context.InstanceId, fileName));
+                    SetRowCompletedAsync((context.InstanceId, fileName)).Wait();
+                    //await context.CallActivityAsync("SetRowCompleted", (context.InstanceId, fileName));
                     log.LogInformation($"File {fileName} as been completed");
-                    bool hasRunningTasks = await context.CallActivityAsync<bool>("HasRunningTasks", context.InstanceId);
+                    bool hasRunningTasks = HasRunningTasksAsync(context.InstanceId).Result;
+                    //bool hasRunningTasks = await context.CallActivityAsync<bool>("HasRunningTasks", context.InstanceId);
+                    await context.CallActivityAsync("SingletonFunction", fileName);
                     done = !hasRunningTasks;
                 }
                 else
@@ -59,6 +60,17 @@ namespace DurableFunctions
             }
             return done;
         }
+
+        [FunctionName("SingletonFunction")]
+        //[Singleton(Mode = SingletonMode.Listener)]
+        public static async Task SingletonFunctionAsync([ActivityTrigger]string fileName, ILogger log)
+        {
+            log.LogInformation($"Started singleton function with file name {fileName}");
+            TimeSpan delay = TimeSpan.FromSeconds(30);
+            await Task.Delay(delay);
+            log.LogInformation($"Singleton function activated with file name {fileName}");
+        }
+
 
         private static async Task<string> GetResponseUriAsync(IDurableOrchestrationClient starter,
             string instanceId,
