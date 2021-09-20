@@ -20,15 +20,12 @@ namespace DurableFunctions
         private static readonly TableClient _tableClient = _tableServiceClient.GetTableClient("TestTable");
 
         [FunctionName("BlobQueue")]
-        public static async Task RunAsync([QueueTrigger("test-queue", Connection = "BlobQueue")]string queueMessage,
+        public static async Task RunAsync([QueueTrigger("test-queue", Connection = "BlobQueue")] QueueMessageDto message,
             [DurableClient] IDurableOrchestrationClient starter,
             ILogger log)
         {
-            var message = JsonConvert.DeserializeObject<QueueMessageDto>(queueMessage);
             string instanceId = await starter.StartNewAsync("BatchOrchestrator", message);
             log.LogInformation($"Started orchestration with ID = '{instanceId}'.");
-            await InsertRowsAsync(message.Files.ToList(), instanceId);
-            log.LogInformation("Inserted rows to table");
             string responseUri = await GetResponseUriAsync(starter, instanceId);
             log.LogInformation(responseUri);
         }
@@ -96,51 +93,6 @@ namespace DurableFunctions
             };
             return builder.Uri;
 
-        }
-
-        private static async Task InsertRowsAsync(List<string> files, string instanceId)
-        {
-            string partitonKey = Guid.NewGuid().ToString();
-            List<Task> insertTasks = new List<Task>();
-            files.ForEach(file =>
-            {
-                string rowKey = Guid.NewGuid().ToString();
-                TableEntity row = new TableEntity(partitonKey, rowKey)
-                {
-                    {"InstanceId" , instanceId},
-                    {"FileName", file },
-                    {"Completed", false }
-                };
-                Task insertTask = _tableClient.AddEntityAsync(row);
-                insertTasks.Add(insertTask);
-            });
-            await Task.WhenAll(insertTasks);
-        }
-
-        [FunctionName("HasRunningTasks")]
-        public static async Task<bool> HasRunningTasksAsync([ActivityTrigger] string instanceId)
-        {
-            string querySting = $"InstanceId eq '{instanceId}' and Completed eq false";
-            var rows = _tableClient.QueryAsync<TableEntity>(filter: querySting);
-            int numRows = 0;
-            await foreach(var row in rows)
-            {
-                numRows++;
-                break;
-            }
-            return numRows > 0;
-        }
-
-        [FunctionName("SetRowCompleted")]
-        public static async Task SetRowCompletedAsync([ActivityTrigger] (string instanceid, string fileName) input)
-        {
-            string querySting = $"InstanceId eq '{input.instanceid}' and FileName eq '{input.fileName}'";
-            var rows = _tableClient.QueryAsync<TableEntity>(filter: querySting);
-            await foreach (var row in rows)
-            {
-                row["Completed"] = true;
-                await _tableClient.UpdateEntityAsync(row, row.ETag);
-            }
         }
     }
 }
