@@ -38,20 +38,18 @@ namespace DurableFunctions
         {
             bool done = false;
             QueueMessageDto message = context.GetInput<QueueMessageDto>();
-            string messageContent = JsonConvert.SerializeObject(message);
-            log.LogInformation(messageContent);
+            EntityId entityId = new EntityId(nameof(FilesCounter), context.InstanceId);
             while (!done)
             {
                 string fileName = await context.WaitForExternalEvent<string>("BatchResponse", TimeSpan.FromMinutes(5));
                 if (message.Files.Contains(fileName))
                 {
-                    SetRowCompletedAsync((context.InstanceId, fileName)).Wait();
-                    //await context.CallActivityAsync("SetRowCompleted", (context.InstanceId, fileName));
                     log.LogInformation($"File {fileName} as been completed");
-                    bool hasRunningTasks = HasRunningTasksAsync(context.InstanceId).Result;
-                    //bool hasRunningTasks = await context.CallActivityAsync<bool>("HasRunningTasks", context.InstanceId);
+                    await context.CallEntityAsync(entityId, "Add", fileName);
+                    int numCompletedTasks = await context.CallEntityAsync<int>(entityId, "Count");
+                    log.LogInformation($"Instance {context.InstanceId} has completed {numCompletedTasks} tasks");
                     await context.CallActivityAsync("SingletonFunction", fileName);
-                    done = !hasRunningTasks;
+                    done = numCompletedTasks == message.Files.Length;
                 }
                 else
                 {
@@ -62,7 +60,7 @@ namespace DurableFunctions
         }
 
         [FunctionName("SingletonFunction")]
-        //[Singleton(Mode = SingletonMode.Listener)]
+        [Singleton(Mode = SingletonMode.Listener)]
         public static async Task SingletonFunctionAsync([ActivityTrigger]string fileName, ILogger log)
         {
             log.LogInformation($"Started singleton function with file name {fileName}");
