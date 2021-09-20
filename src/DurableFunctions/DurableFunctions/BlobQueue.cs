@@ -5,9 +5,11 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using Azure.Data.Tables;
 using DurableFunctions.Models;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.DurableTask;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Primitives;
 using Newtonsoft.Json;
 
 namespace DurableFunctions
@@ -42,13 +44,24 @@ namespace DurableFunctions
             while (!done)
             {
                 string fileName = await context.WaitForExternalEvent<string>("BatchResponse", TimeSpan.FromMinutes(5));
+                log.LogInformation($"Received file {fileName}");
                 if (message.Files.Contains(fileName))
                 {
-                    log.LogInformation($"File {fileName} as been completed");
-                    await context.CallEntityAsync(entityId, "Add", fileName);
+                    context.SignalEntity(entityId, "Add", fileName);
                     int numCompletedTasks = await context.CallEntityAsync<int>(entityId, "Count");
                     log.LogInformation($"Instance {context.InstanceId} has completed {numCompletedTasks} tasks");
-                    await context.CallActivityAsync("SingletonFunction", fileName);
+                    Uri functionuUri = GetFunctionUri("LongRunningTask_HttpStart");
+                    var content = new Dictionary<string, string>()
+                    {
+                        { "fileName", fileName }
+                    };
+                    var header = new HeaderDictionary
+                    {
+                        { "Content-Type", "application/json" }
+                    };
+                    var durableRequest = new DurableHttpRequest(method:HttpMethod.Post, uri:functionuUri,content:JsonConvert.SerializeObject(content), headers: header);
+                    log.LogInformation(JsonConvert.SerializeObject(durableRequest));
+                    var durableTaskResonse = await context.CallHttpAsync(durableRequest);
                     done = numCompletedTasks == message.Files.Length;
                 }
                 else
@@ -58,17 +71,6 @@ namespace DurableFunctions
             }
             return done;
         }
-
-        [FunctionName("SingletonFunction")]
-        [Singleton(Mode = SingletonMode.Listener)]
-        public static async Task SingletonFunctionAsync([ActivityTrigger]string fileName, ILogger log)
-        {
-            log.LogInformation($"Started singleton function with file name {fileName}");
-            TimeSpan delay = TimeSpan.FromSeconds(30);
-            await Task.Delay(delay);
-            log.LogInformation($"Singleton function activated with file name {fileName}");
-        }
-
 
         private static async Task<string> GetResponseUriAsync(IDurableOrchestrationClient starter,
             string instanceId,
@@ -80,6 +82,20 @@ namespace DurableFunctions
             ExternalEventDto dto = JsonConvert.DeserializeObject<ExternalEventDto>(content);
             string responseUri = dto.SendEventPostUri.Replace("{eventName}", eventName);
             return responseUri;
+        }
+
+        private static Uri GetFunctionUri(string functionName)
+        {
+            //string hostName = Environment.GetEnvironmentVariable("WEBSITE_HOSTNAME");
+            UriBuilder builder = new UriBuilder
+            {
+                Scheme = "http",
+                Host = "localhost",
+                Port = 7072,
+                Path = $"api/{functionName}"
+            };
+            return builder.Uri;
+
         }
 
         private static async Task InsertRowsAsync(List<string> files, string instanceId)
