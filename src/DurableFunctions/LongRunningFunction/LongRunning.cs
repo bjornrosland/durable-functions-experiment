@@ -47,6 +47,12 @@ namespace LongRunningFunction
             log.LogInformation($"Started with file name: {eventData}");
             string instanceId = await starter.StartNewAsync("LongRunningTask_Orchestrator", eventData);
             log.LogInformation($"Started orchestration with ID = '{instanceId}'.");
+            var response = GetDurableHttpResponse(instanceId, eventData);
+            return response;
+        }
+
+        private static DurableHttpResponse GetDurableHttpResponse(string instanceId, Dictionary<string, string> eventData)
+        {
             var content = new Dictionary<string, string>()
                     {
                         { "instanceId", instanceId },
@@ -56,8 +62,7 @@ namespace LongRunningFunction
                     {
                         { "Content-Type", "application/json" }
                     };
-            DurableHttpResponse response = new DurableHttpResponse(HttpStatusCode.Accepted, headers, JsonConvert.SerializeObject(content));
-            return response;
+            return new DurableHttpResponse(HttpStatusCode.Accepted, headers, JsonConvert.SerializeObject(content));
         }
     }
 }
