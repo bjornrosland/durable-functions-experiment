@@ -37,7 +37,7 @@ namespace DurableFunctions
         {
             bool done = false;
             QueueMessageDto message = context.GetInput<QueueMessageDto>();
-            EntityId entityId = new EntityId(nameof(FilesCounter), context.InstanceId);
+            EntityId entityId = new EntityId(nameof(FilesDurableEntity), context.InstanceId);
             TimeSpan timeout = TimeSpan.FromMinutes(5);
             while (!done)
             {
