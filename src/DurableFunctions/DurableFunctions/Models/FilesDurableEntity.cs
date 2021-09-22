@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 namespace DurableFunctions.Models
 {
     [JsonObject(MemberSerialization.OptIn)]
-    public class FilesCounter
+    public class FilesDurableEntity
     {
         [JsonProperty("files")]
         public List<string> Files { get; set; } = new List<string>();
@@ -59,8 +59,8 @@ namespace DurableFunctions.Models
             Entity.Current.DeleteState();
         }
 
-        [FunctionName(nameof(FilesCounter))]
+        [FunctionName(nameof(FilesDurableEntity))]
         public static Task Run([EntityTrigger] IDurableEntityContext ctx)
-            => ctx.DispatchAsync<FilesCounter>();
+            => ctx.DispatchAsync<FilesDurableEntity>();
     }
 }
