@@ -26,6 +26,18 @@ namespace DurableFunctions.Models
             return Task.CompletedTask;
         }
 
+        public Task<bool> Contains(string filename)
+        {
+            bool hasFile = Files.Contains(filename);
+            return Task.FromResult(hasFile);
+        }
+
+        public Task<bool> SequenceEqual(List<string> files)
+        {
+            bool areEqual = Files.SequenceEqual(files);
+            return Task.FromResult(areEqual);
+        }
+
         public Task Reset()
         {
             Files = new List<string>();

@@ -38,28 +38,25 @@ namespace DurableFunctions
             bool done = false;
             QueueMessageDto message = context.GetInput<QueueMessageDto>();
             EntityId entityId = new EntityId(nameof(FilesCounter), context.InstanceId);
+            TimeSpan timeout = TimeSpan.FromMinutes(5);
             while (!done)
             {
-                string fileName = await context.WaitForExternalEvent<string>("BatchResponse", TimeSpan.FromMinutes(5));
+                string fileName = await context.WaitForExternalEvent<string>("BatchResponse", timeout);
                 log.LogInformation($"Received file {fileName}");
                 if (message.Files.Contains(fileName))
                 {
+                    bool isAlreadyAdded = await context.CallEntityAsync<bool>(entityId, "Contains", fileName);
+                    if (isAlreadyAdded)
+                    {
+                        log.LogWarning($"The file {fileName} has alrady been added. Skipping file.");
+                        continue;
+                    }
                     context.SignalEntity(entityId, "Add", fileName);
-                    int numCompletedTasks = await context.CallEntityAsync<int>(entityId, "Count");
-                    log.LogInformation($"Instance {context.InstanceId} has completed {numCompletedTasks} tasks");
-                    Uri functionuUri = GetFunctionUri("LongRunningTask_HttpStart");
-                    var content = new Dictionary<string, string>()
-                    {
-                        { "fileName", fileName }
-                    };
-                    var header = new HeaderDictionary
-                    {
-                        { "Content-Type", "application/json" }
-                    };
-                    var durableRequest = new DurableHttpRequest(method:HttpMethod.Post, uri:functionuUri,content:JsonConvert.SerializeObject(content), headers: header);
-                    log.LogInformation(JsonConvert.SerializeObject(durableRequest));
-                    var durableTaskResonse = await context.CallHttpAsync(durableRequest);
-                    done = numCompletedTasks == message.Files.Length;
+                    var durableRequest = GetLongRunningTaskRequest(fileName);
+                    _ = context.CallHttpAsync(durableRequest).ConfigureAwait(false);
+                    log.LogInformation($"Started creating long running task with file name: {fileName}");
+                    var savedFiles = await context.CallEntityAsync<List<string>>(entityId, "Get");
+                    done = await context.CallEntityAsync<bool>(entityId, "SequenceEqual", message.Files.ToList());
                 }
                 else
                 {
@@ -83,7 +80,7 @@ namespace DurableFunctions
 
         private static Uri GetFunctionUri(string functionName)
         {
-            //string hostName = Environment.GetEnvironmentVariable("WEBSITE_HOSTNAME");
+#if DEBUG
             UriBuilder builder = new UriBuilder
             {
                 Scheme = "http",
@@ -91,8 +88,34 @@ namespace DurableFunctions
                 Port = 7072,
                 Path = $"api/{functionName}"
             };
+#else
+            UriBuilder builder = new UriBuilder
+            {
+                Scheme = "https",
+                Host = Environment.GetEnvironmentVariable("WEBSITE_HOSTNAME"),
+                Path = $"api/{functionName}"
+            };
+#endif
             return builder.Uri;
+        }
 
+        private static DurableHttpRequest GetLongRunningTaskRequest(string fileName)
+        {
+            Uri functionuUri = GetFunctionUri("LongRunningTask_HttpStart");
+            var content = new Dictionary<string, string>()
+                    {
+                        { "fileName", fileName }
+                    };
+            var header = new HeaderDictionary
+                    {
+                        { "Content-Type", "application/json" }
+                    };
+            var durableRequest = new DurableHttpRequest(method: HttpMethod.Post,
+                uri: functionuUri,
+                content: JsonConvert.SerializeObject(content),
+                headers: header);
+            return durableRequest;
+            
         }
     }
 }
