@@ -53,7 +53,7 @@ namespace DurableFunctions
                     }
                     context.SignalEntity(entityId, "Add", fileName);
                     var durableRequest = GetLongRunningTaskRequest(fileName);
-                    _ = context.CallHttpAsync(durableRequest).ConfigureAwait(false);
+                    var durableResonse = await context.CallHttpAsync(durableRequest);
                     log.LogInformation($"Started creating long running task with file name: {fileName}");
                     var savedFiles = await context.CallEntityAsync<List<string>>(entityId, "Get");
                     done = await context.CallEntityAsync<bool>(entityId, "SequenceEqual", message.Files.ToList());
