@@ -31,7 +31,7 @@ namespace LongRunningFunction
         [Singleton(Mode = SingletonMode.Function)]
         public static async Task LongRunningTaskActivityAsync([ActivityTrigger] string fileName, ILogger log)
         {
-            TimeSpan delay = TimeSpan.FromSeconds(5);
+            TimeSpan delay = TimeSpan.FromSeconds(15);
             log.LogInformation($"Started creating object for {fileName}");
             await Task.Delay(delay);
             log.LogInformation($"Object for file {fileName} has been created");

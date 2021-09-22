@@ -55,14 +55,16 @@ namespace DurableFunctions
                     var durableRequest = GetLongRunningTaskRequest(fileName);
                     var durableResonse = await context.CallHttpAsync(durableRequest);
                     log.LogInformation($"Started creating long running task with file name: {fileName}");
-                    var savedFiles = await context.CallEntityAsync<List<string>>(entityId, "Get");
-                    done = await context.CallEntityAsync<bool>(entityId, "SequenceEqual", message.Files.ToList());
+                    int completedFilesCount = await context.CallEntityAsync<int>(entityId, "Count");
+                    log.LogInformation($"Number of completed files: {completedFilesCount}");
+                    done = message.Files.Length == completedFilesCount;
                 }
                 else
                 {
                     log.LogWarning($"The file '{fileName}' is not listed in this context");
                 }
             }
+            context.SignalEntity(entityId, "Delete");
             return done;
         }
 

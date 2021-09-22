@@ -1,10 +1,8 @@
 ﻿using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.DurableTask;
 using Newtonsoft.Json;
-using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace DurableFunctions.Models
@@ -20,22 +18,10 @@ namespace DurableFunctions.Models
         {
             lock (Files)
             {
-                if(!Files.Contains(fileName))
+                if (!Files.Contains(fileName))
                     Files.Add(fileName);
             }
             return Task.CompletedTask;
-        }
-
-        public Task<bool> Contains(string filename)
-        {
-            bool hasFile = Files.Contains(filename);
-            return Task.FromResult(hasFile);
-        }
-
-        public Task<bool> SequenceEqual(List<string> files)
-        {
-            bool areEqual = Files.SequenceEqual(files);
-            return Task.FromResult(areEqual);
         }
 
         public Task Reset()
